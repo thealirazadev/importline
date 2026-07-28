@@ -2,15 +2,77 @@ import { mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
-import { ApiError, dataResponse, errorResponse, serverErrorResponse } from "@/lib/errors";
+import {
+  ApiError,
+  dataResponse,
+  errorResponse,
+  listResponse,
+  serverErrorResponse,
+} from "@/lib/errors";
 import { logError, logInfo } from "@/lib/logger";
 import { detectFromSample } from "@/lib/csv/detect";
+import { toImportSummary } from "@/lib/import/serialize";
 import { MalformedUploadError, UploadTooLargeError, receiveUpload } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
 
 const SOURCE_LABEL_MAX = 128;
 const FILENAME_MAX = 255;
+const PER_PAGE_DEFAULT = 50;
+const PER_PAGE_MAX = 200;
+
+function parsePagination(url: URL): { page: number; perPage: number } {
+  const page = Number(url.searchParams.get("page") ?? 1);
+  const perPage = Number(url.searchParams.get("per_page") ?? PER_PAGE_DEFAULT);
+  if (!Number.isInteger(page) || page < 1) {
+    throw new ApiError("validation_failed", "Invalid pagination parameters.", {
+      page: "page must be a positive integer.",
+    });
+  }
+  if (!Number.isInteger(perPage) || perPage < 1 || perPage > PER_PAGE_MAX) {
+    throw new ApiError("validation_failed", "Invalid pagination parameters.", {
+      per_page: `per_page must be between 1 and ${PER_PAGE_MAX}.`,
+    });
+  }
+  return { page, perPage };
+}
+
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const { page, perPage } = parsePagination(url);
+
+    const catalogParam = url.searchParams.get("catalog_id");
+    const stateParam = url.searchParams.get("state");
+    const where: { catalogId?: number; state?: string } = {};
+    if (catalogParam !== null) {
+      const catalogId = Number(catalogParam);
+      if (!Number.isInteger(catalogId) || catalogId < 1) {
+        throw new ApiError("validation_failed", "Invalid catalog filter.", {
+          catalog_id: "catalog_id must be a positive integer.",
+        });
+      }
+      where.catalogId = catalogId;
+    }
+    if (stateParam !== null && stateParam !== "") where.state = stateParam;
+
+    const [rows, total] = await Promise.all([
+      prisma.import.findMany({
+        where,
+        orderBy: { id: "desc" },
+        skip: (page - 1) * perPage,
+        take: perPage,
+      }),
+      prisma.import.count({ where }),
+    ]);
+
+    return listResponse(rows.map(toImportSummary), { page, per_page: perPage, total });
+  } catch (error) {
+    if (error instanceof ApiError) return errorResponse(error);
+    logError("api.failed", error, { route: "GET /api/imports" });
+    return serverErrorResponse();
+  }
+}
 
 /** Display-only: control characters and path separators are stripped before storage. */
 function safeFilename(raw: string): string {
