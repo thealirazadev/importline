@@ -23,7 +23,9 @@ export type LogEvent =
   | "job.reclaimed"
   | "worker.started"
   | "api.failed"
-  | "janitor.failed";
+  | "janitor.failed"
+  | "job.failed"
+  | "worker.failed";
 
 export type LogFields = Record<string, string | number | boolean | null | undefined>;
 
