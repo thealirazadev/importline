@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx worker/index.ts",
-    "seed": "tsx prisma/seed.ts",
+    "seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
