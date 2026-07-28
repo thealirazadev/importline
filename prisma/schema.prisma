@@ -1,0 +1,198 @@
+// Table and column names are the contract in docs/architecture.md and must not be renamed.
+// JSON payloads are stored as TEXT so one schema serves both SQLite and PostgreSQL; length
+// caps live in the normalization rules rather than in engine-specific column types.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Catalog {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+  imports  Import[]
+  lock     CatalogLock?
+
+  @@map("catalogs")
+}
+
+model Product {
+  id           Int      @id @default(autoincrement())
+  catalogId    Int      @map("catalog_id")
+  sku          String
+  name         String
+  priceCents   Int      @map("price_cents")
+  stock        Int      @default(0)
+  category     String?
+  description  String?
+  imageUrl     String?  @map("image_url")
+  rowHash      String   @map("row_hash")
+  lastImportId Int?     @map("last_import_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  catalog    Catalog @relation(fields: [catalogId], references: [id])
+  lastImport Import? @relation(fields: [lastImportId], references: [id])
+
+  @@unique([catalogId, sku])
+  @@index([catalogId, updatedAt])
+  @@index([lastImportId])
+  @@map("products")
+}
+
+model Import {
+  id                 Int       @id @default(autoincrement())
+  catalogId          Int       @map("catalog_id")
+  sourceLabel        String?   @map("source_label")
+  originalFilename   String    @map("original_filename")
+  storedPath         String    @map("stored_path")
+  fileSizeBytes      Int       @map("file_size_bytes")
+  fileSha256         String    @map("file_sha256")
+  delimiter          String
+  delimiterUncertain Boolean   @default(false) @map("delimiter_uncertain")
+  encoding           String
+  headerJson         String    @map("header_json")
+  mappingJson        String?   @map("mapping_json")
+  state              String
+  totalRows          Int?      @map("total_rows")
+  processedRows      Int       @default(0) @map("processed_rows")
+  errorRows          Int       @default(0) @map("error_rows")
+  warningRows        Int       @default(0) @map("warning_rows")
+  wouldCreate        Int?      @map("would_create")
+  wouldUpdate        Int?      @map("would_update")
+  wouldSkip          Int?      @map("would_skip")
+  createdCount       Int       @default(0) @map("created_count")
+  updatedCount       Int       @default(0) @map("updated_count")
+  skippedCount       Int       @default(0) @map("skipped_count")
+  batchSize          Int       @map("batch_size")
+  lastCommittedBatch Int       @default(0) @map("last_committed_batch")
+  failingBatch       Int?      @map("failing_batch")
+  pauseReason        String?   @map("pause_reason")
+  cancelRequested    Boolean   @default(false) @map("cancel_requested")
+  startedAt          DateTime? @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  catalog   Catalog          @relation(fields: [catalogId], references: [id])
+  batches   ImportBatch[]
+  rowErrors ImportRowError[]
+  changes   ImportChange[]
+  jobs      Job[]
+  products  Product[]
+  locks     CatalogLock[]
+
+  @@index([catalogId, createdAt])
+  @@index([state])
+  @@map("imports")
+}
+
+model ImportBatch {
+  id           Int      @id @default(autoincrement())
+  importId     Int      @map("import_id")
+  batchNumber  Int      @map("batch_number")
+  firstRow     Int      @map("first_row")
+  lastRow      Int      @map("last_row")
+  createdCount Int      @map("created_count")
+  updatedCount Int      @map("updated_count")
+  skippedCount Int      @map("skipped_count")
+  appliedAt    DateTime @map("applied_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  import Import @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([importId, batchNumber])
+  @@map("import_batches")
+}
+
+model ImportRowError {
+  id         Int      @id @default(autoincrement())
+  importId   Int      @map("import_id")
+  phase      String
+  rowNumber  Int      @map("row_number")
+  columnName String?  @map("column_name")
+  code       String
+  severity   String
+  message    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  import Import @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId, rowNumber])
+  @@index([importId, severity])
+  @@map("import_row_errors")
+}
+
+model ImportChange {
+  id          Int      @id @default(autoincrement())
+  importId    Int      @map("import_id")
+  batchNumber Int      @map("batch_number")
+  sku         String
+  action      String
+  fieldsJson  String   @map("fields_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  import Import @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId, id])
+  @@index([importId, sku])
+  @@map("import_changes")
+}
+
+model MappingTemplate {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique
+  mappingJson     String    @map("mapping_json")
+  headerSignature String    @map("header_signature")
+  lastUsedAt      DateTime? @map("last_used_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([headerSignature])
+  @@map("mapping_templates")
+}
+
+model Job {
+  id          Int       @id @default(autoincrement())
+  type        String
+  importId    Int       @map("import_id")
+  state       String
+  attempts    Int       @default(0)
+  runAfter    DateTime  @map("run_after")
+  lockedBy    String?   @map("locked_by")
+  heartbeatAt DateTime? @map("heartbeat_at")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  import Import @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([state, runAfter])
+  @@map("jobs")
+}
+
+model CatalogLock {
+  catalogId   Int      @id @map("catalog_id")
+  importId    Int      @map("import_id")
+  workerId    String   @map("worker_id")
+  acquiredAt  DateTime @map("acquired_at")
+  heartbeatAt DateTime @map("heartbeat_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  catalog Catalog @relation(fields: [catalogId], references: [id])
+  import  Import  @relation(fields: [importId], references: [id])
+
+  @@map("catalog_locks")
+}
