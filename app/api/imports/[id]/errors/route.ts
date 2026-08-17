@@ -4,13 +4,6 @@ import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-interface ErrorQuery {
-  page?: string;
-  per_page?: string;
-  severity?: string;
-  code?: string;
-}
-
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
@@ -25,7 +18,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const severity = url.searchParams.get("severity");
     const code = url.searchParams.get("code");
 
-    const where: any = { importId };
+    const where: { importId: number; severity?: string; code?: string } = { importId };
     if (severity) where.severity = severity;
     if (code) where.code = code;
 

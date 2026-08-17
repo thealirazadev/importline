@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/db";
-import { dataResponse, errorResponse, serverErrorResponse, ApiError } from "@/lib/errors";
+import { dataResponse, serverErrorResponse } from "@/lib/errors";
 import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request) {
+export async function GET() {
   try {
     const templates = await prisma.mappingTemplate.findMany({
       orderBy: { lastUsedAt: { sort: "desc", nulls: "last" } },

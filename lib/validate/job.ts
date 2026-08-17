@@ -7,7 +7,7 @@ const ROW_LIMIT = 500_000;
 const BATCH_SIZE = 500;
 const SKU_CHUNK_SIZE = 1000;
 
-export async function runValidationJob(importId: number, workerId: string): Promise<void> {
+export async function runValidationJob(importId: number): Promise<void> {
   const importRow = await prisma.import.findUnique({ where: { id: importId } });
   if (!importRow) {
     logError("validate.failed", new Error("Import not found"), { import_id: importId });
@@ -79,7 +79,12 @@ export async function runValidationJob(importId: number, workerId: string): Prom
         rawRow[header] = record.cells[index] || "";
       });
 
-      const validation = validateAndNormalizeRow(rawRow, mapping, headers.length, record.cells.length);
+      const validation = validateAndNormalizeRow(
+        rawRow,
+        mapping,
+        headers.length,
+        record.cells.length,
+      );
 
       if (!validation.ok) {
         errorRows++;
@@ -96,8 +101,8 @@ export async function runValidationJob(importId: number, workerId: string): Prom
       } else {
         const normalized = validation.value;
         // Check for duplicate SKU
-        if (skuMap.has(normalized.sku)) {
-          const prior = skuMap.get(normalized.sku)!;
+        const prior = skuMap.get(normalized.sku);
+        if (prior) {
           warningRows++;
           errors.push({
             phase: "validate",
@@ -145,7 +150,8 @@ export async function runValidationJob(importId: number, workerId: string): Prom
 
       const existingMap = new Map(existing.map((p) => [p.sku, p.rowHash]));
       for (const sku of chunk) {
-        const rowData = skuMap.get(sku)!;
+        const rowData = skuMap.get(sku);
+        if (!rowData) continue; // Should never happen, but safe guard
         if (!existingMap.has(sku)) {
           wouldCreate++;
         } else if (existingMap.get(sku) === rowData.hash) {

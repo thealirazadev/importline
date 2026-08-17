@@ -50,7 +50,10 @@ function parseDecimal(raw: string): Decimal | null {
   if (dots > 0 && commas > 0) {
     const decimalChar = value.lastIndexOf(".") > value.lastIndexOf(",") ? "." : ",";
     if ((decimalChar === "." ? dots : commas) > 1) return null; // repeated decimal separator
-    const parts = value.split(decimalChar === "." ? "," : ".").join("").split(decimalChar);
+    const parts = value
+      .split(decimalChar === "." ? "," : ".")
+      .join("")
+      .split(decimalChar);
     integer = parts[0];
     fraction = parts[1] ?? "";
   } else if (dots + commas > 0) {
@@ -92,7 +95,8 @@ export function parseStock(raw: string): NumberResult {
   // "12.00" is still twelve units; anything else after the separator is not an integer.
   if (/[1-9]/.test(parsed.fraction)) return { ok: false, error: "invalid" };
   const value = Number(parsed.integer || "0");
-  if (!Number.isSafeInteger(value) || value > STOCK_MAX) return { ok: false, error: "out_of_range" };
+  if (!Number.isSafeInteger(value) || value > STOCK_MAX)
+    return { ok: false, error: "out_of_range" };
   if (parsed.negative && value > 0) return { ok: false, error: "negative" };
   return { ok: true, value };
 }

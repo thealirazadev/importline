@@ -10,7 +10,7 @@ export const TEXT_LIMITS: Record<string, number | undefined> = {
 };
 
 // C0 and C1 controls except tab (0x09); newlines inside quoted cells go too.
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- control regex is necessary for stripping controls
 const CONTROLS = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/g;
 
 export const EXCERPT_MAX = 64;

@@ -28,14 +28,13 @@ export interface RowValidationError {
 }
 
 export type RowValidationResult =
-  | { ok: true; value: NormalizedRow; hash: string }
-  | { ok: false; errors: RowValidationError[] };
+  { ok: true; value: NormalizedRow; hash: string } | { ok: false; errors: RowValidationError[] };
 
 export function validateAndNormalizeRow(
   rawRow: Record<string, string>,
   mapping: Mapping,
   headerCount: number,
-  columnCount: number
+  columnCount: number,
 ): RowValidationResult {
   const errors: RowValidationError[] = [];
 
@@ -110,9 +109,10 @@ export function validateAndNormalizeRow(
     price_cents: priceCents,
     stock: stockCount,
     category: mapping.category ? normalizeText(rawRow[mapping.category] || "") || null : null,
-    description: mapping.description ? normalizeText(rawRow[mapping.description] || "") || null : null,
-    image_url:
-      imageUrlResult && imageUrlResult.ok ? imageUrlResult.value || null : null,
+    description: mapping.description
+      ? normalizeText(rawRow[mapping.description] || "") || null
+      : null,
+    image_url: imageUrlResult && imageUrlResult.ok ? imageUrlResult.value || null : null,
   };
 
   const hash = computeRowHash(normalized);

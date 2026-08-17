@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeText, parsePrice, parseStock, normalizeUrl, TEXT_LIMITS } from "@/lib/normalize";
-import { validateAndNormalizeRow, computeRowHash } from "@/lib/validate/row";
+import { validateAndNormalizeRow } from "@/lib/validate/row";
 
 describe("text normalization", () => {
   it("normalizes NFC and trims", () => {
