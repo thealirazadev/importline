@@ -97,18 +97,22 @@ export function validateAndNormalizeRow(
     return { ok: false, errors };
   }
 
+  const imageUrlRaw = mapping.image_url ? rawRow[mapping.image_url] || "" : "";
+  const imageUrlResult = imageUrlRaw ? normalizeUrl(imageUrlRaw) : null;
+
+  // After error checks, priceResult must be non-null and ok
+  const priceCents = priceResult && priceResult.ok ? priceResult.value : 0;
+  const stockCount = stockResult && stockResult.ok ? stockResult.value : 0;
+
   const normalized: NormalizedRow = {
     sku,
     name,
-    price_cents: priceResult!.value,
-    stock: stockResult?.value || 0,
+    price_cents: priceCents,
+    stock: stockCount,
     category: mapping.category ? normalizeText(rawRow[mapping.category] || "") || null : null,
     description: mapping.description ? normalizeText(rawRow[mapping.description] || "") || null : null,
-    image_url: mapping.image_url
-      ? normalizeUrl(rawRow[mapping.image_url] || "").ok
-        ? normalizeUrl(rawRow[mapping.image_url] || "").value || null
-        : null
-      : null,
+    image_url:
+      imageUrlResult && imageUrlResult.ok ? imageUrlResult.value || null : null,
   };
 
   const hash = computeRowHash(normalized);
