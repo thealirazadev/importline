@@ -6,6 +6,15 @@ import { validateAndNormalizeRow, type Mapping } from "./row";
 const ROW_LIMIT = 500_000;
 const BATCH_SIZE = 500;
 const SKU_CHUNK_SIZE = 1000;
+const CANCEL_CHECK_ROWS = 1000;
+
+async function cancelRequested(importId: number): Promise<boolean> {
+  const row = await prisma.import.findUnique({
+    where: { id: importId },
+    select: { cancelRequested: true },
+  });
+  return row?.cancelRequested ?? false;
+}
 
 export async function runValidationJob(importId: number): Promise<void> {
   const importRow = await prisma.import.findUnique({ where: { id: importId } });
@@ -64,9 +73,9 @@ export async function runValidationJob(importId: number): Promise<void> {
       // Reported row numbers are CSV record numbers (header = 1), as in the API contract.
       const rowNumber = record.rowNumber;
 
-      // Check for cancel
-      const check = await prisma.import.findUnique({ where: { id: importId } });
-      if (check?.cancelRequested) {
+      // Check for cancel at chunk boundaries; a query per row would dominate large files.
+      const atChunkStart = (dataRows - 1) % CANCEL_CHECK_ROWS === 0;
+      if (atChunkStart && (await cancelRequested(importId))) {
         await prisma.import.update({
           where: { id: importId },
           data: { state: "cancelled" },

@@ -92,4 +92,13 @@ describe("validation job", () => {
     ]);
     expect(errors[1].message).toContain("row 2");
   });
+
+  it("stops and cancels when cancellation was requested", async () => {
+    const created = await createImport("sku,name,price,stock\nA-1,Anvil,9.99,3\n");
+    await db.prisma.import.update({ where: { id: created.id }, data: { cancelRequested: true } });
+    await queue.enqueueJob({ type: "validate", importId: created.id });
+    await worker.pollOnce("worker-test");
+    const row = await db.prisma.import.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.state).toBe("cancelled");
+  });
 });
