@@ -12,6 +12,7 @@ import {
   reclaimStaleJobs,
   sweepOrphanUploads,
 } from "../lib/import/queue";
+import { runValidationJob } from "../lib/validate/job";
 
 /** Long-running worker: claim a job, heartbeat while it runs, sweep stale work when idle. */
 
@@ -27,12 +28,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Phase 1 has no job bodies yet: validate lands in phase 2 and apply in phase 3, both as
- * modules called from here. Until then a claimed job is completed as a no-op.
- */
+/** Apply lands in phase 3; until then a claimed apply job is completed as a no-op. */
 async function runJobBody(job: Job): Promise<void> {
-  void job;
+  if (job.type === "validate") await runValidationJob(job.importId);
 }
 
 export async function runClaimedJob(job: Job, workerId: string): Promise<void> {
