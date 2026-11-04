@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import { logInfo, logError } from "@/lib/logger";
 import { readRecords, csvOptionsFor, isBlankRecord } from "@/lib/csv/stream";
-import { validateAndNormalizeRow, type Mapping } from "./row";
+import { toFieldMapping } from "@/lib/import/mapping";
+import { validateAndNormalizeRow } from "./row";
 
 const ROW_LIMIT = 500_000;
 const BATCH_SIZE = 500;
@@ -36,7 +37,7 @@ export async function runValidationJob(
     return;
   }
 
-  const mapping = JSON.parse(importRow.mappingJson) as Mapping;
+  const mapping = toFieldMapping(JSON.parse(importRow.mappingJson) as Record<string, string>);
   const headers = JSON.parse(importRow.headerJson) as string[];
 
   try {

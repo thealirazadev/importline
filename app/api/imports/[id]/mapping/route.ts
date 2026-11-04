@@ -1,28 +1,19 @@
 import { prisma } from "@/lib/db";
 import { ApiError, dataResponse, errorResponse, serverErrorResponse } from "@/lib/errors";
 import { logError, logInfo } from "@/lib/logger";
+import { checkMapping } from "@/lib/import/mapping";
 
 export const dynamic = "force-dynamic";
 
 interface MappingRequest {
-  mapping: Record<string, string | null>;
+  mapping?: unknown;
   delimiter?: string;
   encoding?: string;
-  template_name?: string;
+  save_template?: string;
 }
 
-const VALID_FIELDS = new Set([
-  "sku",
-  "name",
-  "price",
-  "stock",
-  "category",
-  "description",
-  "image_url",
-]);
 const VALID_DELIMITERS = [",", ";", "\t", "|"];
 const VALID_ENCODINGS = ["utf-8", "utf-16le", "utf-16be", "windows-1252"];
-const REQUIRED_FIELDS = ["sku", "name", "price"];
 
 export async function PUT(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -36,34 +27,16 @@ export async function PUT(_request: Request, context: { params: Promise<{ id: st
     if (row === null) throw new ApiError("not_found", "That import does not exist.");
 
     const payload = (await _request.json()) as MappingRequest;
-    const mapping = payload.mapping || {};
     const delimiter = payload.delimiter;
     const encoding = payload.encoding;
-    const templateName = payload.template_name;
+    const templateName = payload.save_template;
 
-    // Validate mapping
-    const fieldErrors: Record<string, string> = {};
     const headers = JSON.parse(row.headerJson) as string[];
-    const headerSet = new Set(headers);
-
-    for (const [field, header] of Object.entries(mapping)) {
-      if (!VALID_FIELDS.has(field)) {
-        fieldErrors[field] = `Unknown field: ${field}`;
-      } else if (header && !headerSet.has(header)) {
-        fieldErrors[field] = `Header "${header}" not found in file`;
-      }
+    const checked = checkMapping(payload.mapping, headers);
+    if (!checked.ok) {
+      throw new ApiError("validation_failed", "Invalid mapping", checked.errors);
     }
-
-    for (const required of REQUIRED_FIELDS) {
-      if (!mapping[required]) {
-        fieldErrors[required] = `${required} is required`;
-      }
-    }
-
-    if (Object.keys(fieldErrors).length > 0) {
-      const details: Record<string, string> = fieldErrors;
-      throw new ApiError("validation_failed", "Invalid mapping", details);
-    }
+    const mapping = checked.mapping;
 
     if (delimiter && !VALID_DELIMITERS.includes(delimiter)) {
       throw new ApiError("validation_failed", "Invalid delimiter");
