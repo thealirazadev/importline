@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { normalizeText, parsePrice, parseStock, normalizeUrl } from "@/lib/normalize";
+import { normalizeText, parsePrice, parseStock, normalizeUrl, TEXT_LIMITS } from "@/lib/normalize";
 
 export interface Mapping {
   sku?: string;
@@ -92,12 +92,41 @@ export function validateAndNormalizeRow(
     });
   }
 
+  const category = mapping.category ? normalizeText(rawRow[mapping.category] || "") : "";
+  const description = mapping.description ? normalizeText(rawRow[mapping.description] || "") : "";
+  const imageUrl = mapping.image_url ? normalizeText(rawRow[mapping.image_url] || "") : "";
+
+  // Over-cap values are rejected, never truncated.
+  const capped: Array<[keyof Mapping, string]> = [
+    ["sku", sku],
+    ["name", name],
+    ["category", category],
+    ["description", description],
+    ["image_url", imageUrl],
+  ];
+  for (const [field, value] of capped) {
+    const limit = TEXT_LIMITS[field];
+    if (limit !== undefined && value.length > limit) {
+      errors.push({
+        field: mapping[field] || field,
+        code: "field_too_long",
+        message: `${field} is longer than ${limit} characters`,
+      });
+    }
+  }
+
+  const imageUrlResult = imageUrl ? normalizeUrl(imageUrl) : null;
+  if (imageUrlResult && !imageUrlResult.ok && imageUrl.length <= (TEXT_LIMITS.image_url ?? 0)) {
+    errors.push({
+      field: mapping.image_url || "image_url",
+      code: "url_invalid",
+      message: "image_url must be an absolute http or https URL",
+    });
+  }
+
   if (errors.length > 0) {
     return { ok: false, errors };
   }
-
-  const imageUrlRaw = mapping.image_url ? rawRow[mapping.image_url] || "" : "";
-  const imageUrlResult = imageUrlRaw ? normalizeUrl(imageUrlRaw) : null;
 
   // After error checks, priceResult must be non-null and ok
   const priceCents = priceResult && priceResult.ok ? priceResult.value : 0;
@@ -108,10 +137,8 @@ export function validateAndNormalizeRow(
     name,
     price_cents: priceCents,
     stock: stockCount,
-    category: mapping.category ? normalizeText(rawRow[mapping.category] || "") || null : null,
-    description: mapping.description
-      ? normalizeText(rawRow[mapping.description] || "") || null
-      : null,
+    category: category || null,
+    description: description || null,
     image_url: imageUrlResult && imageUrlResult.ok ? imageUrlResult.value || null : null,
   };
 

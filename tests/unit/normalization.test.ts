@@ -172,4 +172,37 @@ describe("row validation", () => {
       }
     }
   });
+
+  const fullMapping = { ...mapping, category: "Category", description: "Desc", image_url: "Image" };
+  const fullRow = (overrides: Record<string, string>) => ({
+    SKU: "ABC",
+    Name: "Widget",
+    Price: "10.00",
+    Stock: "5",
+    Category: "Tools",
+    Desc: "A widget",
+    Image: "https://example.com/a.png",
+    ...overrides,
+  });
+  const codes = (overrides: Record<string, string>) => {
+    const result = validateAndNormalizeRow(fullRow(overrides), fullMapping, 7, 7);
+    return result.ok ? [] : result.errors.map((error) => [error.field, error.code]);
+  };
+
+  it("rejects text over the field caps instead of truncating", () => {
+    expect(codes({ SKU: "x".repeat(65) })).toEqual([["SKU", "field_too_long"]]);
+    expect(codes({ Name: "x".repeat(257) })).toEqual([["Name", "field_too_long"]]);
+    expect(codes({ Category: "x".repeat(129) })).toEqual([["Category", "field_too_long"]]);
+    expect(codes({ Desc: "x".repeat(8193) })).toEqual([["Desc", "field_too_long"]]);
+    expect(codes({ Image: `https://e.com/${"x".repeat(2048)}` })).toEqual([
+      ["Image", "field_too_long"],
+    ]);
+    expect(codes({ SKU: "x".repeat(64), Name: "x".repeat(256) })).toEqual([]);
+  });
+
+  it("rejects an image url that is not absolute http or https", () => {
+    expect(codes({ Image: "javascript:alert(1)" })).toEqual([["Image", "url_invalid"]]);
+    expect(codes({ Image: "/relative.png" })).toEqual([["Image", "url_invalid"]]);
+    expect(codes({ Image: "" })).toEqual([]);
+  });
 });
