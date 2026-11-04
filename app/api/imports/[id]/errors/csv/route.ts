@@ -1,24 +1,10 @@
 import { prisma } from "@/lib/db";
 import { ApiError, errorResponse, serverErrorResponse } from "@/lib/errors";
 import { logError } from "@/lib/logger";
+import { reportCsvLine } from "@/lib/csv/report";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-
-// Prefix to prevent CSV injection attacks
-const CSV_INJECTION_PREFIX = "'";
-
-function escapeCsvField(value: string | null): string {
-  if (value === null || value === undefined) return "";
-  const v = String(value);
-  if (v.includes(",") || v.includes('"') || v.includes("\n")) {
-    return `"${v.replace(/"/g, '""')}"`;
-  }
-  if (v.match(/^[@=+-]/)) {
-    return `${CSV_INJECTION_PREFIX}${v}`;
-  }
-  return v;
-}
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -37,18 +23,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     });
 
     const headers = ["row_number", "phase", "column_name", "code", "severity", "message"];
-    const rows = errors.map((e) => [
-      String(e.rowNumber),
-      e.phase,
-      e.columnName || "",
-      e.code,
-      e.severity,
-      e.message,
-    ]);
-
-    let csv = headers.map(escapeCsvField).join(",") + "\n";
-    for (const row of rows) {
-      csv += row.map(escapeCsvField).join(",") + "\n";
+    let csv = reportCsvLine(headers);
+    for (const e of errors) {
+      csv += reportCsvLine([e.rowNumber, e.phase, e.columnName, e.code, e.severity, e.message]);
     }
 
     return new NextResponse(csv, {
