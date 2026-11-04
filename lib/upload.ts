@@ -143,6 +143,9 @@ export async function receiveUpload(
             buffer = buffer.subarray(at + opening.length + 2);
             state = next === "--" ? "done" : "headers";
             progressed = true;
+          } else if (at === -1 && buffer.length > HEADER_MAX_BYTES + opening.length) {
+            // A preamble this long is not a real multipart body; do not keep buffering it.
+            throw new MalformedUploadError("opening boundary not found");
           }
         } else if (state === "headers") {
           const end = buffer.indexOf("\r\n\r\n");

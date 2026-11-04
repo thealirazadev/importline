@@ -103,4 +103,26 @@ describe("POST /api/imports", () => {
     expect(payload.error.code).toBe("validation_failed");
     expect(readdirSync(path.join(uploadsDir, "tmp"))).toEqual([]);
   });
+
+  it("stops reading a body that never sends the opening boundary", async () => {
+    const { contentType } = multipartBody([]);
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 64) controller.close();
+        else controller.enqueue(new Uint8Array(64 * 1024).fill(0x61));
+      },
+    });
+    const response = await route.POST(
+      new Request("http://localhost/api/imports", {
+        method: "POST",
+        headers: { "content-type": contentType },
+        body,
+        duplex: "half",
+      } as RequestInit),
+    );
+    expect(response.status).toBe(415);
+    expect(pulled).toBeLessThan(10);
+  });
 });
