@@ -99,4 +99,32 @@ describe("PUT /api/imports/{id}/mapping", () => {
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("validation_failed");
   });
+
+  it("answers 400 for a body that is not valid JSON", async () => {
+    const created = await createImport();
+    const response = await put(created.id, "{not json");
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an over-long or path-like template name", async () => {
+    const created = await createImport();
+    for (const name of ["x".repeat(129), "a/b"]) {
+      const response = await put(
+        created.id,
+        JSON.stringify({ mapping: MAPPING, save_template: name }),
+      );
+      expect(response.status).toBe(400);
+    }
+    const row = await db.prisma.import.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.state).toBe("uploaded");
+  });
+
+  it("answers 409 and enqueues nothing when the import is past mapping", async () => {
+    const created = await createImport("applying");
+    const response = await put(created.id, JSON.stringify({ mapping: MAPPING }));
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("state_conflict");
+    expect(await db.prisma.job.count({ where: { importId: created.id } })).toBe(0);
+  });
 });
