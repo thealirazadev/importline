@@ -6,16 +6,16 @@ import Link from "next/link";
 
 interface Import {
   id: number;
-  originalFilename: string;
+  original_filename: string;
   delimiter: string;
   encoding: string;
-  headerJson: string;
-  mappingJson: string | null;
+  headers: string[];
+  mapping: Record<string, string> | null;
 }
 
 interface Preview {
   headers: string[];
-  rows: Record<string, string>[];
+  rows: string[][];
 }
 
 interface MappingTemplate {
@@ -29,7 +29,6 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
   const router = useRouter();
   const [importData, setImportData] = useState<Import | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [templates, setTemplates] = useState<MappingTemplate[]>([]);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [templateName, setTemplateName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -43,7 +42,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         const importRes = await fetch(`/api/imports/${id}`);
         if (!importRes.ok) throw new Error("Failed to load import");
         const importResp = await importRes.json();
-        const importRow = importResp.data;
+        const importRow = importResp.data as Import;
         setImportData(importRow);
 
         const previewRes = await fetch(`/api/imports/${id}/preview`);
@@ -51,19 +50,20 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         const previewResp = await previewRes.json();
         setPreview(previewResp.data);
 
+        let templates: MappingTemplate[] = [];
         const templatesRes = await fetch("/api/mapping-templates");
         if (templatesRes.ok) {
           const templatesResp = await templatesRes.json();
-          setTemplates(templatesResp.data || []);
+          templates = templatesResp.data || [];
         }
 
-        // Try to prefill from template
-        const headers = JSON.parse(importRow.headerJson) as string[];
-        const signature = headers.sort().join("|");
+        // Prefill from the saved mapping, else from a template with the same headers
+        const signature = [...importRow.headers].sort().join("|");
         const matchingTemplate = templates.find((t) => t.headerSignature === signature);
-        if (matchingTemplate) {
-          const templateMapping = JSON.parse(matchingTemplate.mappingJson);
-          setMapping(templateMapping);
+        if (importRow.mapping) {
+          setMapping(importRow.mapping);
+        } else if (matchingTemplate) {
+          setMapping(JSON.parse(matchingTemplate.mappingJson));
         } else {
           setMapping({});
         }
@@ -74,7 +74,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
       }
     };
     load();
-  }, [params, templates]);
+  }, [params]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -85,14 +85,14 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mapping,
-          template_name: templateName || undefined,
+          save_template: templateName || undefined,
         }),
       });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.error?.message || "Failed to save mapping");
       }
-      router.push(`/imports/${id}`);
+      router.push("/imports");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -111,7 +111,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         <Link href="/imports" className="text-blue-600 hover:underline">
           Back to Imports
         </Link>
-        <h1 className="text-2xl font-bold mt-4">{importData.originalFilename}</h1>
+        <h1 className="text-2xl font-bold mt-4">{importData.original_filename}</h1>
         <p className="text-gray-600">Map columns to product fields</p>
       </div>
 
@@ -129,7 +129,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="space-y-4 mb-6">
-        {headers.map((header) => (
+        {headers.map((header, column) => (
           <div key={header} className="border rounded p-3">
             <label className="block font-semibold text-sm mb-2">{header}</label>
             <select
@@ -152,7 +152,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
               <option value="image_url">Image URL</option>
             </select>
             {preview.rows[0] && (
-              <p className="text-xs text-gray-500 mt-1">Example: {preview.rows[0][header]}</p>
+              <p className="text-xs text-gray-500 mt-1">Example: {preview.rows[0][column]}</p>
             )}
           </div>
         ))}
