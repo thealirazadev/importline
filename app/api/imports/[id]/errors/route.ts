@@ -4,6 +4,8 @@ import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
+const PER_PAGE_MAX = 100;
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
@@ -13,8 +15,18 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const url = new URL(request.url);
-    const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
-    const per_page = Math.min(100, Math.max(1, Number(url.searchParams.get("per_page") || "20")));
+    const page = Number(url.searchParams.get("page") || "1");
+    const per_page = Number(url.searchParams.get("per_page") || "20");
+    if (!Number.isInteger(page) || page < 1) {
+      throw new ApiError("validation_failed", "Invalid pagination parameters.", {
+        page: "page must be a positive integer.",
+      });
+    }
+    if (!Number.isInteger(per_page) || per_page < 1 || per_page > PER_PAGE_MAX) {
+      throw new ApiError("validation_failed", "Invalid pagination parameters.", {
+        per_page: `per_page must be between 1 and ${PER_PAGE_MAX}.`,
+      });
+    }
     const severity = url.searchParams.get("severity");
     const code = url.searchParams.get("code");
 
