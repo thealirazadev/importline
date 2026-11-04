@@ -112,4 +112,41 @@ describe("GET /api/imports/{id}/errors/csv", () => {
       "",
     ]);
   });
+
+  it("streams every row across page boundaries in row order", async () => {
+    const big = await db.prisma.import.create({
+      data: {
+        catalogId: (await db.prisma.catalog.findFirstOrThrow()).id,
+        originalFilename: "big.csv",
+        storedPath: "/nonexistent/2.csv",
+        fileSizeBytes: 10,
+        fileSha256: "e".repeat(64),
+        delimiter: ",",
+        encoding: "utf-8",
+        headerJson: JSON.stringify(["sku"]),
+        state: "validated",
+        batchSize: 1000,
+      },
+    });
+    // Inserted in reverse so the output order comes from the query, not insertion order.
+    const rows = Array.from({ length: 2500 }, (_, index) => ({
+      importId: big.id,
+      phase: "validate",
+      rowNumber: 2501 - index,
+      columnName: "sku",
+      code: "missing_required",
+      severity: "error",
+      message: "SKU is required",
+    }));
+    await db.prisma.importRowError.createMany({ data: rows });
+
+    const response = await csvRoute.GET(
+      new Request(`http://localhost/api/imports/${big.id}/errors/csv`),
+      { params: Promise.resolve({ id: String(big.id) }) },
+    );
+    const lines = (await response.text()).trimEnd().split("\n");
+    expect(lines).toHaveLength(2501);
+    const numbers = lines.slice(1).map((line) => Number(line.split(",")[0]));
+    expect(numbers).toEqual(Array.from({ length: 2500 }, (_, index) => index + 2));
+  });
 });
