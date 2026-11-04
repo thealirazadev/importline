@@ -19,7 +19,7 @@ backed by a database ledger, safe cancellation, and a full per-import audit trai
 
 ## Planned features
 
-All of the following is planned behavior; implementation has not started (see Status).
+Some of the following is implemented and some is still planned (see Status).
 
 - Streamed CSV upload (up to 500k rows) with automatic delimiter and encoding detection,
   operator-overridable.
@@ -62,7 +62,29 @@ Out of scope by design: Excel parsing, image downloading, exports, and multi-use
 | [docs/launch-checklist.md](docs/launch-checklist.md) | Pre-launch verification |
 | [docs/memory.md](docs/memory.md) | Working log and decisions |
 
+## Running locally
+
+```bash
+npm install
+cp .env.example .env
+npx prisma migrate dev
+npm run seed              # default catalog
+npm run dev               # web (next dev)
+npm run worker            # worker process, in a second terminal
+```
+
+Checks:
+
+```bash
+npm run lint              # eslint + prettier check
+npm run typecheck         # tsc --noEmit
+npm test                  # vitest: unit + integration (temp sqlite)
+npm run build             # next build
+```
+
 ## Status
 
-Planning stage: the documents above are complete and under review; no application code exists
-yet. Implementation follows docs/phases.md one approved phase at a time.
+In progress. Phase 1 (streamed upload, detection, job queue, worker) is done, and Phase 2
+(mapping, normalization, validation report) is mostly in place. Apply, pause/resume/cancel, the
+catalog lock, and the change audit are not implemented yet. Implementation follows
+docs/phases.md one approved phase at a time.
