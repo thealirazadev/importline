@@ -59,7 +59,7 @@ products page. Runs headless in CI; anything deeper belongs in integration.
 npm test                  # vitest run: unit + integration (temp sqlite)
 npm run test:unit         # vitest run tests/unit
 npm run test:integration  # vitest run tests/integration
-npm run test:e2e          # playwright test (needs a built app; script boots web + worker)
+# npm run test:e2e is not available yet: end-to-end tests (Playwright) are not set up
 npm run lint              # eslint + prettier check
 npm run typecheck         # tsc --noEmit
 npm run build             # next build
