@@ -9,10 +9,12 @@ const uploadsDir = path.join(dir, "uploads");
 type Db = typeof import("@/lib/db");
 type Worker = typeof import("@/worker/index");
 type Queue = typeof import("@/lib/import/queue");
+type Validation = typeof import("@/lib/validate/job");
 
 let db: Db;
 let worker: Worker;
 let queue: Queue;
+let validation: Validation;
 let catalogId = 0;
 let fileCount = 0;
 
@@ -23,6 +25,7 @@ beforeAll(async () => {
   catalogId = catalog.id;
   worker = await import("@/worker/index");
   queue = await import("@/lib/import/queue");
+  validation = await import("@/lib/validate/job");
   mkdirSync(uploadsDir, { recursive: true });
 });
 
@@ -77,5 +80,16 @@ describe("validation job", () => {
     expect(row.errorRows).toBe(0);
     expect(row.wouldCreate).toBe(2);
     expect(errors).toEqual([]);
+  });
+
+  it("reports CSV record numbers, counting the header as row 1", async () => {
+    const csv = "sku,name,price,stock\nA-1,Anvil,9.99,3\n\nB-2,,1.50,1\nA-1,Anvil,9.99,3\n";
+    const { row, errors } = await validate(csv);
+    expect(row.totalRows).toBe(3);
+    expect(errors.map((error) => [error.rowNumber, error.code])).toEqual([
+      [4, "missing_required"],
+      [5, "duplicate_sku"],
+    ]);
+    expect(errors[1].message).toContain("row 2");
   });
 });

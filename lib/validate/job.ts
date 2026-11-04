@@ -30,7 +30,7 @@ export async function runValidationJob(importId: number): Promise<void> {
     // Clear any prior validation rows
     await prisma.importRowError.deleteMany({ where: { importId } });
 
-    let rowNumber = 0;
+    let dataRows = 0;
     let errorRows = 0;
     let warningRows = 0;
     const errors: Array<{
@@ -46,7 +46,7 @@ export async function runValidationJob(importId: number): Promise<void> {
     const records = readRecords(importRow.storedPath, csvOptionsFor(importRow));
 
     for await (const record of records) {
-      if (rowNumber >= ROW_LIMIT) {
+      if (dataRows >= ROW_LIMIT) {
         await prisma.import.update({
           where: { id: importId },
           data: { state: "failed", pauseReason: "row_limit_exceeded" },
@@ -60,7 +60,9 @@ export async function runValidationJob(importId: number): Promise<void> {
         continue;
       }
 
-      rowNumber++;
+      dataRows++;
+      // Reported row numbers are CSV record numbers (header = 1), as in the API contract.
+      const rowNumber = record.rowNumber;
 
       // Check for cancel
       const check = await prisma.import.findUnique({ where: { id: importId } });
@@ -167,7 +169,7 @@ export async function runValidationJob(importId: number): Promise<void> {
       where: { id: importId },
       data: {
         state: "validated",
-        totalRows: rowNumber,
+        totalRows: dataRows,
         errorRows,
         warningRows,
         wouldCreate,
@@ -178,7 +180,7 @@ export async function runValidationJob(importId: number): Promise<void> {
 
     logInfo("validate.completed", {
       import_id: importId,
-      total_rows: rowNumber,
+      total_rows: dataRows,
       error_rows: errorRows,
       would_create: wouldCreate,
       would_update: wouldUpdate,
