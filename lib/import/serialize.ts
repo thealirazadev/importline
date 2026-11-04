@@ -1,4 +1,4 @@
-import type { Import } from "@prisma/client";
+import type { Import, ImportRowError } from "@prisma/client";
 
 /** API shapes for imports; see docs/api-contracts.md. Stored JSON columns are text. */
 
@@ -51,5 +51,16 @@ export function toImportDetail(row: Import) {
     ...toImportSummary(row),
     headers: parseJson<string[]>(row.headerJson, []),
     mapping: parseJson<Record<string, string> | null>(row.mappingJson, null),
+  };
+}
+
+export function toRowErrorItem(row: ImportRowError) {
+  return {
+    row_number: row.rowNumber,
+    column: row.columnName,
+    code: row.code,
+    severity: row.severity,
+    phase: row.phase,
+    message: row.message,
   };
 }

@@ -81,4 +81,35 @@ describe("GET /api/imports/{id}/errors", () => {
     expect(body.data).toHaveLength(1);
     expect(body.meta).toEqual({ page: 2, per_page: 1, total: 2 });
   });
+
+  it("returns items in the documented shape", async () => {
+    const body = (await (await list("")).json()) as { data: unknown[] };
+    expect(body.data[0]).toEqual({
+      row_number: 2,
+      column: "price",
+      code: "price_invalid",
+      severity: "error",
+      phase: "validate",
+      message: "Invalid price: invalid",
+    });
+  });
+});
+
+describe("GET /api/imports/{id}/errors/csv", () => {
+  it("downloads the documented columns with formula cells neutralized", async () => {
+    const response = await csvRoute.GET(
+      new Request(`http://localhost/api/imports/${importId}/errors/csv`),
+      params(),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="import-${importId}-report.csv"`,
+    );
+    expect((await response.text()).split("\n")).toEqual([
+      "row_number,phase,severity,column,code,message",
+      "2,validate,error,price,price_invalid,Invalid price: invalid",
+      `3,validate,warning,sku,duplicate_sku,"SKU ""=cmd|calc"" seen at row 2; last occurrence wins"`,
+      "",
+    ]);
+  });
 });

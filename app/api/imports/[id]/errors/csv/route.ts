@@ -22,16 +22,16 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       orderBy: { rowNumber: "asc" },
     });
 
-    const headers = ["row_number", "phase", "column_name", "code", "severity", "message"];
+    const headers = ["row_number", "phase", "severity", "column", "code", "message"];
     let csv = reportCsvLine(headers);
     for (const e of errors) {
-      csv += reportCsvLine([e.rowNumber, e.phase, e.columnName, e.code, e.severity, e.message]);
+      csv += reportCsvLine([e.rowNumber, e.phase, e.severity, e.columnName, e.code, e.message]);
     }
 
     return new NextResponse(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="import-${importId}-errors.csv"`,
+        "Content-Disposition": `attachment; filename="import-${importId}-report.csv"`,
       },
     });
   } catch (error) {

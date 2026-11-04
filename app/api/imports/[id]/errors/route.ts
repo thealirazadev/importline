@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { ApiError, listResponse, errorResponse, serverErrorResponse } from "@/lib/errors";
 import { logError } from "@/lib/logger";
+import { toRowErrorItem } from "@/lib/import/serialize";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       take: per_page,
     });
 
-    return listResponse(errors, { page, per_page, total });
+    return listResponse(errors.map(toRowErrorItem), { page, per_page, total });
   } catch (error) {
     if (error instanceof ApiError) return errorResponse(error);
     logError("api.failed", error, { route: "GET /api/imports/[id]/errors" });
