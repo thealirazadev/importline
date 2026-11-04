@@ -101,4 +101,20 @@ describe("validation job", () => {
     const row = await db.prisma.import.findUniqueOrThrow({ where: { id: created.id } });
     expect(row.state).toBe("cancelled");
   });
+
+  it("accepts exactly the row limit even with trailing blank lines", async () => {
+    const created = await createImport("sku,name,price,stock\nA-1,A,1,1\nB-2,B,1,1\n\n");
+    await validation.runValidationJob(created.id, { rowLimit: 2 });
+    const row = await db.prisma.import.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.state).toBe("validated");
+    expect(row.totalRows).toBe(2);
+  });
+
+  it("fails a file with more data rows than the limit", async () => {
+    const created = await createImport("sku,name,price,stock\nA-1,A,1,1\nB-2,B,1,1\nC-3,C,1,1\n");
+    await validation.runValidationJob(created.id, { rowLimit: 2 });
+    const row = await db.prisma.import.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.state).toBe("failed");
+    expect(row.pauseReason).toBe("row_limit_exceeded");
+  });
 });

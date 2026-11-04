@@ -16,7 +16,11 @@ async function cancelRequested(importId: number): Promise<boolean> {
   return row?.cancelRequested ?? false;
 }
 
-export async function runValidationJob(importId: number): Promise<void> {
+export async function runValidationJob(
+  importId: number,
+  options: { rowLimit?: number } = {},
+): Promise<void> {
+  const rowLimit = options.rowLimit ?? ROW_LIMIT;
   const importRow = await prisma.import.findUnique({ where: { id: importId } });
   if (!importRow) {
     logError("validate.failed", new Error("Import not found"), { import_id: importId });
@@ -55,7 +59,14 @@ export async function runValidationJob(importId: number): Promise<void> {
     const records = readRecords(importRow.storedPath, csvOptionsFor(importRow));
 
     for await (const record of records) {
-      if (dataRows >= ROW_LIMIT) {
+      // Skip header and blank rows
+      if (record.rowNumber === 1 || isBlankRecord(record.cells)) {
+        continue;
+      }
+
+      // Counted after the blank-line skip, so a trailing newline is not a row over the limit.
+      dataRows++;
+      if (dataRows > rowLimit) {
         await prisma.import.update({
           where: { id: importId },
           data: { state: "failed", pauseReason: "row_limit_exceeded" },
@@ -63,13 +74,6 @@ export async function runValidationJob(importId: number): Promise<void> {
         logError("validate.failed", new Error("Row limit exceeded"), { import_id: importId });
         return;
       }
-
-      // Skip header and blank rows
-      if (record.rowNumber === 1 || isBlankRecord(record.cells)) {
-        continue;
-      }
-
-      dataRows++;
       // Reported row numbers are CSV record numbers (header = 1), as in the API contract.
       const rowNumber = record.rowNumber;
 
