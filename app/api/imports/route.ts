@@ -77,7 +77,6 @@ export async function GET(request: Request) {
 /** Display-only: control characters and path separators are stripped before storage. */
 function safeFilename(raw: string): string {
   const cleaned = raw
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
     .replace(/[/\\]/g, "_")
     .trim();
