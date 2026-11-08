@@ -268,7 +268,7 @@ Major versions; exact versions are pinned at install time and `package-lock.json
 ## Data model
 
 Defined in `prisma/schema.prisma`; every change ships as a committed migration. Names below are
-the contract; the coding agent must not rename them. Timestamps are UTC datetimes; `created_at`/
+the contract; implementations must not rename them. Timestamps are UTC datetimes; `created_at`/
 `updated_at` exist on every table and are omitted below; columns are NOT NULL unless marked
 NULL; PKs are autoincrement ints unless stated.
 
