@@ -1,5 +1,7 @@
 import type { Import } from "@prisma/client";
 
+import { type FieldMap, toHeaderMap } from "./mapping";
+
 /** API shapes for imports; see docs/api-contracts.md. Stored JSON columns are text. */
 
 function parseJson<T>(raw: string | null, fallback: T): T {
@@ -50,6 +52,7 @@ export function toImportDetail(row: Import) {
   return {
     ...toImportSummary(row),
     headers: parseJson<string[]>(row.headerJson, []),
-    mapping: parseJson<Record<string, string> | null>(row.mappingJson, null),
+    // Stored as { field: header }; the API speaks { header: field }.
+    mapping: toHeaderMap(parseJson<FieldMap | null>(row.mappingJson, null)),
   };
 }

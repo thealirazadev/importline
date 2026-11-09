@@ -1,30 +1,27 @@
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import { ApiError, dataResponse, errorResponse, serverErrorResponse } from "@/lib/errors";
+import { headerSignature, validateMapping } from "@/lib/import/mapping";
+import { toImportDetail } from "@/lib/import/serialize";
 import { logError, logInfo } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
 interface MappingRequest {
-  mapping: Record<string, string | null>;
+  mapping?: unknown;
   delimiter?: string;
   encoding?: string;
+  save_template?: string;
+  /** Accepted for older clients; `save_template` is the documented name. */
   template_name?: string;
 }
 
-const VALID_FIELDS = new Set([
-  "sku",
-  "name",
-  "price",
-  "stock",
-  "category",
-  "description",
-  "image_url",
-]);
 const VALID_DELIMITERS = [",", ";", "\t", "|"];
 const VALID_ENCODINGS = ["utf-8", "utf-16le", "utf-16be", "windows-1252"];
-const REQUIRED_FIELDS = ["sku", "name", "price"];
+const MAX_TEMPLATE_NAME = 128;
 
-export async function PUT(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
     const importId = Number(id);
@@ -35,88 +32,69 @@ export async function PUT(_request: Request, context: { params: Promise<{ id: st
     const row = await prisma.import.findUnique({ where: { id: importId } });
     if (row === null) throw new ApiError("not_found", "That import does not exist.");
 
-    const payload = (await _request.json()) as MappingRequest;
-    const mapping = payload.mapping || {};
-    const delimiter = payload.delimiter;
-    const encoding = payload.encoding;
-    const templateName = payload.template_name;
+    let payload: MappingRequest;
+    try {
+      payload = (await request.json()) as MappingRequest;
+    } catch {
+      throw new ApiError("validation_failed", "The request body is not valid JSON.");
+    }
 
-    // Validate mapping
-    const fieldErrors: Record<string, string> = {};
     const headers = JSON.parse(row.headerJson) as string[];
-    const headerSet = new Set(headers);
+    const result = validateMapping(headers, payload.mapping);
+    if (result.errors) throw new ApiError("validation_failed", "Invalid mapping", result.errors);
 
-    for (const [field, header] of Object.entries(mapping)) {
-      if (!VALID_FIELDS.has(field)) {
-        fieldErrors[field] = `Unknown field: ${field}`;
-      } else if (header && !headerSet.has(header)) {
-        fieldErrors[field] = `Header "${header}" not found in file`;
-      }
+    const details: Record<string, string> = {};
+    if (payload.delimiter !== undefined && !VALID_DELIMITERS.includes(payload.delimiter)) {
+      details.delimiter = "must be one of , ; tab |";
+    }
+    if (payload.encoding !== undefined && !VALID_ENCODINGS.includes(payload.encoding)) {
+      details.encoding = `must be one of ${VALID_ENCODINGS.join(", ")}`;
+    }
+    const templateName = (payload.save_template ?? payload.template_name)?.trim() || null;
+    if (templateName !== null && templateName.length > MAX_TEMPLATE_NAME) {
+      details.save_template = `at most ${MAX_TEMPLATE_NAME} characters`;
+    }
+    if (Object.keys(details).length) {
+      throw new ApiError("validation_failed", "Invalid mapping request", details);
     }
 
-    for (const required of REQUIRED_FIELDS) {
-      if (!mapping[required]) {
-        fieldErrors[required] = `${required} is required`;
-      }
-    }
-
-    if (Object.keys(fieldErrors).length > 0) {
-      const details: Record<string, string> = fieldErrors;
-      throw new ApiError("validation_failed", "Invalid mapping", details);
-    }
-
-    if (delimiter && !VALID_DELIMITERS.includes(delimiter)) {
-      throw new ApiError("validation_failed", "Invalid delimiter");
-    }
-
-    if (encoding && !VALID_ENCODINGS.includes(encoding)) {
-      throw new ApiError("validation_failed", "Invalid encoding");
-    }
-
-    // Transition to validating and enqueue job
-    const updated = await prisma.import.update({
-      where: { id: importId, state: { in: ["uploaded", "validated"] } },
-      data: {
-        mappingJson: JSON.stringify(mapping),
-        delimiter: delimiter || row.delimiter,
-        encoding: encoding || row.encoding,
-        state: "validating",
-        startedAt: new Date(),
-      },
-    });
-
-    if (!updated) throw new ApiError("state_conflict", "Import state changed");
-
-    // Enqueue validate job
-    await prisma.job.create({
-      data: {
-        type: "validate",
-        importId,
-        state: "queued",
-        runAfter: new Date(),
-      },
-    });
-
-    // Save template if requested
-    if (templateName) {
-      const headerSignature = headers.sort().join("|");
-      await prisma.mappingTemplate.upsert({
-        where: { name: templateName },
-        create: {
-          name: templateName,
-          mappingJson: JSON.stringify(mapping),
-          headerSignature,
-        },
-        update: {
-          mappingJson: JSON.stringify(mapping),
-          lastUsedAt: new Date(),
-        },
+    const mappingJson = JSON.stringify(result.fieldMap);
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const moved = await tx.import.update({
+          where: { id: importId, state: { in: ["uploaded", "validated"] } },
+          data: {
+            mappingJson,
+            delimiter: payload.delimiter ?? row.delimiter,
+            encoding: payload.encoding ?? row.encoding,
+            state: "validating",
+            startedAt: new Date(),
+          },
+        });
+        await tx.job.create({
+          data: { type: "validate", importId, state: "queued", runAfter: new Date() },
+        });
+        if (templateName !== null) {
+          const signature = headerSignature(headers);
+          await tx.mappingTemplate.upsert({
+            where: { name: templateName },
+            create: { name: templateName, mappingJson, headerSignature: signature },
+            update: { mappingJson, headerSignature: signature, lastUsedAt: new Date() },
+          });
+        }
+        return moved;
       });
+    } catch (error) {
+      // The guarded update matched no row: the import left uploaded/validated meanwhile.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new ApiError("state_conflict", `The import is ${row.state}; mapping is not allowed.`);
+      }
+      throw error;
     }
 
-    logInfo("mapping.saved", { import_id: importId, template_name: templateName || null });
-
-    return dataResponse({ ok: true });
+    logInfo("mapping.saved", { import_id: importId, template_name: templateName });
+    return dataResponse(toImportDetail(updated));
   } catch (error) {
     if (error instanceof ApiError) return errorResponse(error);
     logError("api.failed", error, { route: "PUT /api/imports/[id]/mapping" });
