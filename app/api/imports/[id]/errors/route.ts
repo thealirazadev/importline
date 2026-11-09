@@ -12,9 +12,15 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       throw new ApiError("not_found", "That import does not exist.");
     }
 
+    const exists = await prisma.import.findUnique({
+      where: { id: importId },
+      select: { id: true },
+    });
+    if (exists === null) throw new ApiError("not_found", "That import does not exist.");
+
     const url = new URL(request.url);
-    const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
-    const per_page = Math.min(100, Math.max(1, Number(url.searchParams.get("per_page") || "20")));
+    const page = positiveInt(url.searchParams.get("page"), 1);
+    const per_page = Math.min(100, positiveInt(url.searchParams.get("per_page"), 50));
     const severity = url.searchParams.get("severity");
     const code = url.searchParams.get("code");
 
@@ -30,10 +36,25 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       take: per_page,
     });
 
-    return listResponse(errors, { page, per_page, total });
+    // docs/api-contracts.md shape; storage stays camelCase.
+    const data = errors.map((e) => ({
+      row_number: e.rowNumber,
+      column: e.columnName,
+      code: e.code,
+      severity: e.severity,
+      phase: e.phase,
+      message: e.message,
+    }));
+    return listResponse(data, { page, per_page, total });
   } catch (error) {
     if (error instanceof ApiError) return errorResponse(error);
     logError("api.failed", error, { route: "GET /api/imports/[id]/errors" });
     return serverErrorResponse();
   }
+}
+
+/** A positive integer query value, or the fallback for anything else (NaN, 0, "abc"). */
+function positiveInt(raw: string | null, fallback: number): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 ? value : fallback;
 }

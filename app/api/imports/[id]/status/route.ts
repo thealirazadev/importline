@@ -4,27 +4,6 @@ import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
-interface ImportStatus {
-  id: number;
-  state: string;
-  processedRows: number;
-  totalRows: number | null;
-  errorRows: number;
-  warningRows: number;
-  wouldCreate: number | null;
-  wouldUpdate: number | null;
-  wouldSkip: number | null;
-  createdCount: number;
-  updatedCount: number;
-  skippedCount: number;
-  failingBatch: number | null;
-  pauseReason: string | null;
-  lastCommittedBatch: number;
-  cancelRequested: boolean;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-}
-
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
@@ -36,25 +15,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const row = await prisma.import.findUnique({ where: { id: importId } });
     if (row === null) throw new ApiError("not_found", "That import does not exist.");
 
-    const status: ImportStatus = {
-      id: row.id,
+    // docs/api-contracts.md: the lightweight poll payload.
+    const validRows = (row.totalRows ?? 0) - row.errorRows;
+    const applying = row.state === "applying";
+    const status = {
       state: row.state,
-      processedRows: row.processedRows,
-      totalRows: row.totalRows,
-      errorRows: row.errorRows,
-      warningRows: row.warningRows,
-      wouldCreate: row.wouldCreate,
-      wouldUpdate: row.wouldUpdate,
-      wouldSkip: row.wouldSkip,
-      createdCount: row.createdCount,
-      updatedCount: row.updatedCount,
-      skippedCount: row.skippedCount,
-      failingBatch: row.failingBatch,
-      pauseReason: row.pauseReason,
-      lastCommittedBatch: row.lastCommittedBatch,
-      cancelRequested: row.cancelRequested,
-      startedAt: row.startedAt,
-      finishedAt: row.finishedAt,
+      total_rows: row.totalRows,
+      processed_rows: row.processedRows,
+      current_batch: applying ? row.lastCommittedBatch + 1 : null,
+      total_batches: row.totalRows === null ? null : Math.ceil(validRows / row.batchSize),
+      dry_run: {
+        would_create: row.wouldCreate,
+        would_update: row.wouldUpdate,
+        would_skip: row.wouldSkip,
+      },
+      result: { created: row.createdCount, updated: row.updatedCount, skipped: row.skippedCount },
+      error_rows: row.errorRows,
+      warning_rows: row.warningRows,
+      pause_reason: row.pauseReason,
+      cancel_requested: row.cancelRequested,
     };
 
     return dataResponse(status);
