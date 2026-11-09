@@ -13,6 +13,7 @@ import { logError, logInfo } from "@/lib/logger";
 import { detectFromSample } from "@/lib/csv/detect";
 import { toImportSummary } from "@/lib/import/serialize";
 import { MalformedUploadError, UploadTooLargeError, receiveUpload } from "@/lib/upload";
+import { type FieldMap, headerSignature, toHeaderMap } from "@/lib/import/mapping";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +183,17 @@ export async function POST(request: Request) {
       headers: detection.headers.length,
     });
 
+    // Pre-fill: a template saved for the same header signature (docs/architecture.md).
+    const template = await prisma.mappingTemplate.findFirst({
+      where: { headerSignature: headerSignature(detection.headers) },
+      orderBy: { lastUsedAt: { sort: "desc", nulls: "last" } },
+    });
+    const matchedTemplate = template && {
+      id: template.id,
+      name: template.name,
+      mapping: toHeaderMap(JSON.parse(template.mappingJson) as FieldMap),
+    };
+
     return dataResponse(
       {
         id: stored.id,
@@ -195,7 +207,7 @@ export async function POST(request: Request) {
         encoding: stored.encoding,
         headers: detection.headers,
         state: stored.state,
-        matched_template: null,
+        matched_template: matchedTemplate,
         created_at: stored.createdAt.toISOString(),
       },
       { status: 201 },
