@@ -27,6 +27,20 @@ export interface RowValidationError {
   message: string;
 }
 
+const TEXT_CAPS: Partial<Record<keyof Mapping, number>> = {
+  sku: 64,
+  name: 256,
+  category: 128,
+  description: 8192,
+  image_url: 2048,
+};
+
+/** A short, quoted-safe excerpt of a cell for messages. */
+function preview(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 40 ? `${trimmed.slice(0, 40)}...` : trimmed;
+}
+
 export type RowValidationResult =
   { ok: true; value: NormalizedRow; hash: string } | { ok: false; errors: RowValidationError[] };
 
@@ -78,7 +92,7 @@ export function validateAndNormalizeRow(
     errors.push({
       field: mapping.price || "price",
       code: `price_${priceResult?.error || "invalid"}`,
-      message: `Invalid price: ${priceResult?.error || "unknown error"}`,
+      message: `Price "${preview(priceRaw)}" is not valid (${priceResult?.error || "invalid"}).`,
     });
   }
 
@@ -88,16 +102,44 @@ export function validateAndNormalizeRow(
     errors.push({
       field: mapping.stock || "stock",
       code: `stock_${stockResult?.error || "invalid"}`,
-      message: `Invalid stock: ${stockResult?.error || "unknown error"}`,
+      message: `Stock "${preview(stockRaw ?? "")}" is not valid (${stockResult?.error || "invalid"}).`,
+    });
+  }
+
+  // Caps from docs/architecture.md: over cap rejects the row, never truncates.
+  const optional = (field: keyof Mapping) =>
+    mapping[field] ? normalizeText(rawRow[mapping[field] as string] || "") : "";
+  const texts: Array<[keyof Mapping, string]> = [
+    ["sku", sku],
+    ["name", name],
+    ["category", optional("category")],
+    ["description", optional("description")],
+    ["image_url", optional("image_url")],
+  ];
+  for (const [field, value] of texts) {
+    const cap = TEXT_CAPS[field];
+    if (cap !== undefined && value.length > cap) {
+      errors.push({
+        field: mapping[field] || field,
+        code: "field_too_long",
+        message: `${field} is ${value.length} characters; the limit is ${cap}.`,
+      });
+    }
+  }
+
+  const imageUrlRaw = mapping.image_url ? rawRow[mapping.image_url] || "" : "";
+  const imageUrlResult = imageUrlRaw ? normalizeUrl(imageUrlRaw) : null;
+  if (imageUrlResult && !imageUrlResult.ok) {
+    errors.push({
+      field: mapping.image_url || "image_url",
+      code: "url_invalid",
+      message: `Image URL "${preview(imageUrlRaw)}" is not an absolute http or https URL.`,
     });
   }
 
   if (errors.length > 0) {
     return { ok: false, errors };
   }
-
-  const imageUrlRaw = mapping.image_url ? rawRow[mapping.image_url] || "" : "";
-  const imageUrlResult = imageUrlRaw ? normalizeUrl(imageUrlRaw) : null;
 
   // After error checks, priceResult must be non-null and ok
   const priceCents = priceResult && priceResult.ok ? priceResult.value : 0;

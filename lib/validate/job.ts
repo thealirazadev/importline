@@ -62,8 +62,11 @@ export async function runValidationJob(importId: number): Promise<void> {
 
       rowNumber++;
 
-      // Check for cancel
-      const check = await prisma.import.findUnique({ where: { id: importId } });
+      // Honor cancel at chunk boundaries (one read per BATCH_SIZE rows, not per row).
+      const check =
+        rowNumber % BATCH_SIZE === 0
+          ? await prisma.import.findUnique({ where: { id: importId } })
+          : null;
       if (check?.cancelRequested) {
         await prisma.import.update({
           where: { id: importId },
@@ -91,7 +94,8 @@ export async function runValidationJob(importId: number): Promise<void> {
         for (const err of validation.errors) {
           errors.push({
             phase: "validate",
-            rowNumber,
+            // The CSV record number with the header as row 1, as spreadsheets count.
+            rowNumber: record.rowNumber,
             columnName: err.field || null,
             code: err.code,
             severity: "error",
@@ -106,14 +110,14 @@ export async function runValidationJob(importId: number): Promise<void> {
           warningRows++;
           errors.push({
             phase: "validate",
-            rowNumber,
-            columnName: "sku",
+            rowNumber: record.rowNumber,
+            columnName: mapping.sku ?? "sku",
             code: "duplicate_sku",
             severity: "warning",
-            message: `SKU "${normalized.sku}" seen at row ${prior.rowNumber}; last occurrence wins`,
+            message: `SKU "${normalized.sku}" also appears at row ${prior.rowNumber}; the last occurrence wins.`,
           });
         }
-        skuMap.set(normalized.sku, { hash: validation.hash, rowNumber });
+        skuMap.set(normalized.sku, { hash: validation.hash, rowNumber: record.rowNumber });
       }
 
       // Write errors in batches
