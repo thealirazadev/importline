@@ -6,66 +6,68 @@ import Link from "next/link";
 
 interface Import {
   id: number;
-  originalFilename: string;
-  delimiter: string;
-  encoding: string;
-  headerJson: string;
-  mappingJson: string | null;
+  original_filename: string;
+  headers: string[];
+  mapping: Record<string, string> | null;
 }
 
 interface Preview {
   headers: string[];
-  rows: Record<string, string>[];
+  rows: string[][];
 }
 
 interface MappingTemplate {
   id: number;
   name: string;
-  mappingJson: string;
-  headerSignature: string;
+  header_signature: string;
+  mapping: Record<string, string>;
+}
+
+/** Same signature as lib/import/mapping.ts: sha256 of the ordered NFC-trimmed headers. */
+async function headerSignature(headers: string[]): Promise<string> {
+  const normalized = JSON.stringify(headers.map((h) => h.normalize("NFC").trim()));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export default function MappingPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [importData, setImportData] = useState<Import | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [templates, setTemplates] = useState<MappingTemplate[]>([]);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [templateName, setTemplateName] = useState("");
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const { id } = await params;
-        const importRes = await fetch(`/api/imports/${id}`);
+        const [importRes, previewRes, templatesRes] = await Promise.all([
+          fetch(`/api/imports/${id}`),
+          fetch(`/api/imports/${id}/preview`),
+          fetch("/api/templates"),
+        ]);
         if (!importRes.ok) throw new Error("Failed to load import");
-        const importResp = await importRes.json();
-        const importRow = importResp.data;
-        setImportData(importRow);
-
-        const previewRes = await fetch(`/api/imports/${id}/preview`);
         if (!previewRes.ok) throw new Error("Failed to load preview");
-        const previewResp = await previewRes.json();
-        setPreview(previewResp.data);
+        const importRow = (await importRes.json()).data as Import;
+        setImportData(importRow);
+        setPreview((await previewRes.json()).data as Preview);
 
-        const templatesRes = await fetch("/api/mapping-templates");
-        if (templatesRes.ok) {
-          const templatesResp = await templatesRes.json();
-          setTemplates(templatesResp.data || []);
-        }
-
-        // Try to prefill from template
-        const headers = JSON.parse(importRow.headerJson) as string[];
-        const signature = headers.sort().join("|");
-        const matchingTemplate = templates.find((t) => t.headerSignature === signature);
-        if (matchingTemplate) {
-          const templateMapping = JSON.parse(matchingTemplate.mappingJson);
-          setMapping(templateMapping);
-        } else {
-          setMapping({});
+        // An existing mapping wins; otherwise pre-fill from a template for the same headers.
+        if (importRow.mapping) {
+          setMapping(importRow.mapping);
+        } else if (templatesRes.ok) {
+          const templates = ((await templatesRes.json()).data ?? []) as MappingTemplate[];
+          const signature = await headerSignature(importRow.headers);
+          const match = templates.find((t) => t.header_signature === signature);
+          if (match) {
+            setMapping(match.mapping);
+            setPrefilledFrom(match.name);
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Unknown error");
@@ -74,7 +76,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
       }
     };
     load();
-  }, [params, templates]);
+  }, [params]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -85,12 +87,13 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mapping,
-          template_name: templateName || undefined,
+          save_template: templateName || undefined,
         }),
       });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error?.message || "Failed to save mapping");
+        const body = await res.json();
+        setFieldErrors(body.error?.details ?? {});
+        throw new Error(body.error?.message || "Failed to save mapping");
       }
       router.push(`/imports/${id}`);
     } catch (e) {
@@ -111,11 +114,25 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
         <Link href="/imports" className="text-blue-600 hover:underline">
           Back to Imports
         </Link>
-        <h1 className="text-2xl font-bold mt-4">{importData.originalFilename}</h1>
+        <h1 className="text-2xl font-bold mt-4">{importData.original_filename}</h1>
         <p className="text-gray-600">Map columns to product fields</p>
+        {prefilledFrom && (
+          <p className="text-sm mt-2">
+            Pre-filled from the saved template &ldquo;{prefilledFrom}&rdquo;.
+          </p>
+        )}
       </div>
 
-      {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
+      {error && (
+        <div role="alert" className="mb-4 p-3 bg-red-100 text-red-800 rounded">
+          {error}
+          {["sku", "name", "price"]
+            .filter((field) => fieldErrors[field])
+            .map((field) => (
+              <div key={field}>{fieldErrors[field]}</div>
+            ))}
+        </div>
+      )}
 
       <div className="mb-6">
         <label className="block font-semibold mb-2">Save as Template (optional)</label>
@@ -129,7 +146,7 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="space-y-4 mb-6">
-        {headers.map((header) => (
+        {headers.map((header, column) => (
           <div key={header} className="border rounded p-3">
             <label className="block font-semibold text-sm mb-2">{header}</label>
             <select
@@ -152,7 +169,12 @@ export default function MappingPage({ params }: { params: Promise<{ id: string }
               <option value="image_url">Image URL</option>
             </select>
             {preview.rows[0] && (
-              <p className="text-xs text-gray-500 mt-1">Example: {preview.rows[0][header]}</p>
+              <p className="text-xs text-gray-500 mt-1">Example: {preview.rows[0][column]}</p>
+            )}
+            {fieldErrors[header] && (
+              <p role="alert" className="text-xs text-red-700 mt-1">
+                {fieldErrors[header]}
+              </p>
             )}
           </div>
         ))}
