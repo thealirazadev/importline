@@ -18,8 +18,9 @@ work; log every non-obvious decision with its reason. Keep entries short and dat
 
 ## Project status
 
-- Phase 1 complete and verified locally; Phase 2 (mapping, normalization, validation pass) not
-  started and awaiting owner approval.
+- Phases 1 and 2 complete. Phase 2's commits existed but the flow had never run end to end;
+  verified and repaired on 2026-11-09 (see below). Phases 3-5 (apply, resume, products/Postgres)
+  not started.
 - Observed on 2026-07-28: `npm run build`, `npm run typecheck`, and `npm run lint` clean;
   `npm test` green with 17 tests across 3 files (detection unit, upload integration, queue
   integration). Manual checks: comma, semicolon, tab, and pipe files detected correctly; a
@@ -105,3 +106,35 @@ work; log every non-obvious decision with its reason. Keep entries short and dat
 - 2026-07-28 - The test scripts pass `--passWithNoTests` so that every commit in the phase, not
   just the last one, is green before tests exist. `matched_template` in the upload response is
   null until the templates lookup lands in Phase 2.
+
+## Phase 2 verification (2026-11-09)
+
+Ran the real app (production build plus worker; the dev server hit the machine's file-watcher
+limit) with a messy semicolon CSV holding one of each documented problem. Found and fixed:
+
+- The worker completed every job as a no-op (the phase 1 placeholder), so no import could leave
+  `validating`; it now runs `runValidationJob`.
+- The mapping endpoint expected `{ field: header }` while the contract, and the mapping screen,
+  send `{ header: field }`, so neither could save a mapping. The API now takes the documented
+  shape (keys are headers, each field once, sku/name/price required), converts it in
+  `lib/import/mapping.ts`, returns 409 on a state race instead of a 500, and responds with the
+  import detail. `save_template` (documented) is accepted; `template_name` still works.
+- Templates were never matched on upload and the signature was not the documented one; the
+  upload now returns `matched_template` by sha256 of the ordered NFC-trimmed headers, and
+  `GET/DELETE /api/templates` match the contract.
+- Validation missed `field_too_long` and `url_invalid` entirely, reported row numbers one too
+  low (data-row counter instead of the spreadsheet row), and read the database once per row to
+  check for cancel; caps, url rule, `record.rowNumber`, and a check every BATCH_SIZE rows fixed.
+- The errors and status APIs returned Prisma's camelCase; both now return the documented shape,
+  and bad `page`/`per_page` values fall back instead of crashing.
+- The CSV report skipped the formula prefix whenever a cell also needed quoting (a
+  `=HYPERLINK(...)` with a comma reached the spreadsheet intact); `lib/csv/cell.ts` prefixes
+  first, then quotes. The report now streams in pages of 1000 with the documented columns and
+  filename.
+- The mapping screen read fields the API never returned (`headerJson`), reloaded forever (its
+  effect depended on state it set), and redirected to a detail page that did not exist. Fixed,
+  and `/imports/{id}` now shows validation progress (polling), the dry run, and the row report
+  with a severity filter and CSV download.
+- New integration test drives upload, mapping, the worker job, the report, the CSV, and
+  template prefill.
+- Not yet run: the 500,000-row soak and RSS measurement, cancel during validation.
