@@ -1,6 +1,7 @@
 import type { Job } from "@prisma/client";
 import { dbReady, prisma } from "../lib/db";
 import { logError, logInfo } from "../lib/logger";
+import { runValidationJob } from "../lib/validate/job";
 import {
   HEARTBEAT_INTERVAL_MS,
   IDLE_POLL_INTERVAL_MS,
@@ -27,12 +28,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Phase 1 has no job bodies yet: validate lands in phase 2 and apply in phase 3, both as
- * modules called from here. Until then a claimed job is completed as a no-op.
- */
+/** Dispatch a claimed job to its body. Apply lands in phase 3. */
 async function runJobBody(job: Job): Promise<void> {
-  void job;
+  if (job.type === "validate") {
+    await runValidationJob(job.importId);
+    return;
+  }
+  throw new Error(`no handler for job type "${job.type}"`);
 }
 
 export async function runClaimedJob(job: Job, workerId: string): Promise<void> {
