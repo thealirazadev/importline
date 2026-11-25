@@ -1,8 +1,8 @@
 # API Contracts - importline
 
 One HTTP surface: a JSON API under `/api`, consumed by the app's own pages (server components
-fetch directly through `lib/`; client components fetch these routes). There is no auth in v1 (see
-PRD non-goals); every route is operator-facing. All timestamps are ISO-8601 UTC. All ids are
+fetch directly through `lib/`; client components fetch these routes). There is no auth (the app is meant
+for localhost or a trusted network; see docs/decisions.md); every route is operator-facing. All timestamps are ISO-8601 UTC. All ids are
 integers. Prices travel as integer `price_cents`.
 
 Success envelope: `{ "data": ... }`. Lists add `{ "meta": { "page", "per_page", "total" } }`.
