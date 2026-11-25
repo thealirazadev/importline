@@ -1,6 +1,7 @@
 // Table and column names are the contract in docs/architecture.md and must not be renamed.
-// JSON payloads are stored as TEXT so one schema serves both SQLite and PostgreSQL; length
-// caps live in the normalization rules rather than in engine-specific column types.
+// SQLite is the only supported database. JSON payloads are stored as TEXT because Prisma's
+// SQLite connector has no Json type; length caps live in the normalization rules rather than in
+// engine-specific column types.
 
 generator client {
   provider = "prisma-client-js"

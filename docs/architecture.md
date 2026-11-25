@@ -65,7 +65,7 @@ and must survive web-process deploys (see docs/decisions.md).
 - **Claim**: poll every 2 s (5 s idle): `findFirst` queued job with `run_after <= now` by id,
   then compare-and-set
   `updateMany({where: {id, state: 'queued'}, data: {state: 'running', locked_by, heartbeat_at}})`.
-  Row count 1 means claimed; 0 means another worker won. Atomic on SQLite and Postgres.
+  Row count 1 means claimed; 0 means another worker won. Atomic, with no engine-specific SQL.
 - **Heartbeat**: `jobs.heartbeat_at` (and any held `catalog_locks.heartbeat_at`) every 10 s.
 - **Janitor** (in the poll loop): a `running` job with heartbeat older than 60 s is reclaimed to
   `queued`, `attempts + 1`; after 5 reclaims the job is `failed` and its import paused with
@@ -149,8 +149,8 @@ changed field.
 ## Concurrency: catalog lock
 
 Only one import may apply to a catalog at a time. `catalog_locks` uses `catalog_id` as its
-primary key; acquisition is an INSERT that succeeds or hits the PK constraint, portable across
-SQLite and Postgres (native advisory locks are not). The apply job acquires the lock first; if
+primary key; acquisition is an INSERT that succeeds or hits the PK constraint, which needs no
+engine-specific feature (native advisory locks would). The apply job acquires the lock first; if
 it is held with a fresh heartbeat, the worker pauses the import with `catalog_locked` (no wait
 loops; the apply endpoint pre-checks and 409s in the common case). A lock with heartbeat older
 than 120 s whose holder job is not `running` is taken over via conditional delete-then-insert.
@@ -252,11 +252,11 @@ Major versions; exact versions are pinned at install time and `package-lock.json
 - **Next.js 15 (App Router) + TypeScript 5 (strict)** - portfolio convention (pulse-analytics,
   woo-headless). One deployable serves UI and API; route handlers support request-body
   streaming for the upload path.
-- **Prisma 6 + SQLite default, PostgreSQL supported** - the engine's correctness rests on
-  transactions and unique constraints, which Prisma exposes identically over both engines.
-  SQLite keeps the default deployment to one process pair and one file (WAL + busy_timeout
-  handle the web/worker writer overlap at this scale); Postgres is the option for heavier
-  concurrency. Chosen over Drizzle (used in pulse-analytics) because this project has no
+- **Prisma 6 + SQLite** - the engine's correctness rests on transactions and unique
+  constraints, which Prisma exposes the same way on every engine. SQLite keeps a deployment to
+  one process pair and one file (WAL + busy_timeout handle the web/worker writer overlap at this
+  scale). The schema pins the `sqlite` provider and PostgreSQL is not supported yet; the schema
+  avoids engine-specific column types so it could be added later (see docs/decisions.md #12). Chosen over Drizzle (used in pulse-analytics) because this project has no
   hand-written aggregation SQL - its queries are CRUD plus transactions.
 - **papaparse 5** - battle-tested streaming CSV parsing: quoted fields, embedded newlines,
   chunked input with pause/resume, exactly what the memory budget requires. Encoding is handled
@@ -349,12 +349,11 @@ catalog_locks (                                   -- one lock per catalog by con
 
 ## External dependencies and required env vars
 
-External runtime services: none by default (SQLite); optionally a PostgreSQL 14+ server via
-`DATABASE_URL`. Two processes make a deployment: `next start` and the worker under a supervisor.
+External runtime services: none (SQLite in a local file). Two processes make a deployment: `next start` and the worker under a supervisor.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | `file:./data/importline.db` (default) or a `postgresql://` URL |
+| `DATABASE_URL` | SQLite `file:` URL (default `file:./data/importline.db`); other URLs are rejected at startup |
 | `IMPORTLINE_DATA_DIR` | Directory for uploaded CSVs (default `./data/uploads`) |
 | `IMPORT_MAX_FILE_MB` | Upload size cap in MB (default 200); larger uploads get 413 |
 | `IMPORT_BATCH_SIZE` | Rows per apply batch (default 1000) |

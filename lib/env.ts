@@ -23,8 +23,10 @@ const DEFAULTS = {
   BATCH_MAX_ATTEMPTS: 3,
 } as const;
 
-function readString(name: keyof Env, fallback: string, errors: string[]): string {
-  const raw = process.env[name];
+type Source = Record<string, string | undefined>;
+
+function readString(source: Source, name: keyof Env, fallback: string, errors: string[]): string {
+  const raw = source[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = raw.trim();
   if (value.includes("\0")) {
@@ -34,8 +36,15 @@ function readString(name: keyof Env, fallback: string, errors: string[]): string
   return value;
 }
 
-function readInt(name: keyof Env, fallback: number, min: number, max: number, errors: string[]) {
-  const raw = process.env[name];
+function readInt(
+  source: Source,
+  name: keyof Env,
+  fallback: number,
+  min: number,
+  max: number,
+  errors: string[],
+) {
+  const raw = source[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw.trim());
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -45,24 +54,53 @@ function readInt(name: keyof Env, fallback: number, min: number, max: number, er
   return value;
 }
 
-function loadEnv(): Env {
+/**
+ * Parses and validates configuration from `source` (process.env by default), throwing with every
+ * problem listed. Exported for tests; application code uses `env`.
+ */
+export function loadEnv(source: Source = process.env): Env {
   const errors: string[] = [];
   const parsed: Env = {
-    DATABASE_URL: readString("DATABASE_URL", DEFAULTS.DATABASE_URL, errors),
-    IMPORTLINE_DATA_DIR: readString("IMPORTLINE_DATA_DIR", DEFAULTS.IMPORTLINE_DATA_DIR, errors),
+    DATABASE_URL: readString(source, "DATABASE_URL", DEFAULTS.DATABASE_URL, errors),
+    IMPORTLINE_DATA_DIR: readString(
+      source,
+      "IMPORTLINE_DATA_DIR",
+      DEFAULTS.IMPORTLINE_DATA_DIR,
+      errors,
+    ),
     IMPORT_MAX_FILE_MB: readInt(
+      source,
       "IMPORT_MAX_FILE_MB",
       DEFAULTS.IMPORT_MAX_FILE_MB,
       1,
       10_240,
       errors,
     ),
-    IMPORT_BATCH_SIZE: readInt("IMPORT_BATCH_SIZE", DEFAULTS.IMPORT_BATCH_SIZE, 1, 100_000, errors),
-    BATCH_MAX_ATTEMPTS: readInt("BATCH_MAX_ATTEMPTS", DEFAULTS.BATCH_MAX_ATTEMPTS, 1, 20, errors),
+    IMPORT_BATCH_SIZE: readInt(
+      source,
+      "IMPORT_BATCH_SIZE",
+      DEFAULTS.IMPORT_BATCH_SIZE,
+      1,
+      100_000,
+      errors,
+    ),
+    BATCH_MAX_ATTEMPTS: readInt(
+      source,
+      "BATCH_MAX_ATTEMPTS",
+      DEFAULTS.BATCH_MAX_ATTEMPTS,
+      1,
+      20,
+      errors,
+    ),
   };
 
-  if (!/^(file:|postgresql:|postgres:)/.test(parsed.DATABASE_URL)) {
-    errors.push("DATABASE_URL must start with file: or postgresql:");
+  // prisma/schema.prisma pins the sqlite provider, so any other URL would only fail later inside
+  // Prisma with a less helpful message.
+  if (!parsed.DATABASE_URL.startsWith("file:")) {
+    errors.push(
+      "DATABASE_URL must be a SQLite file: URL (for example file:./data/importline.db); " +
+        "PostgreSQL is not supported yet",
+    );
   }
   if (errors.length > 0) {
     throw new Error(`Invalid environment configuration:\n- ${errors.join("\n- ")}`);

@@ -45,7 +45,7 @@ Out of scope by design: Excel parsing, image downloading, exports, and multi-use
 ## Stack
 
 - Next.js 15 (App Router) + TypeScript 5, Tailwind CSS
-- Prisma ORM; SQLite by default, PostgreSQL supported via `DATABASE_URL`
+- Prisma ORM on SQLite (the only supported database for now; the schema pins the sqlite provider)
 - Database-backed job queue processed by a separate worker process (tsx)
 - papaparse for streaming CSV parsing
 - Vitest (unit + integration)
