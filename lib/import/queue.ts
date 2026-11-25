@@ -46,7 +46,7 @@ export async function enqueueJob(
 
 /**
  * Compare-and-set claim: the update only succeeds while the row is still `queued`, so two
- * workers racing for the same job produce exactly one winner on SQLite and PostgreSQL alike.
+ * workers racing for the same job produce exactly one winner. It uses no engine-specific SQL.
  */
 export async function claimNextJob(workerId: string, now: Date = new Date()): Promise<Job | null> {
   for (;;) {

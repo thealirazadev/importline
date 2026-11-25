@@ -24,6 +24,8 @@
 
 ### Fixed
 
+- A non-SQLite `DATABASE_URL` is rejected at startup with a clear message, and the docs no longer
+  claim PostgreSQL support; the Prisma schema pins the sqlite provider.
 - Formula-like values are neutralized before quoting in the CSV report, which streams.
 - The API returns the documented error and status payloads.
 - Validation enforces length caps and URL checks, and reports spreadsheet row numbers.

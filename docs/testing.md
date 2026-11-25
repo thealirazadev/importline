@@ -27,6 +27,8 @@ Unit (`tests/unit`):
   sequence cut by the sample boundary, every delimiter candidate, the uncertain path, tie-breaking
   by precedence, and header normalization.
 - `lib/csv/cell.ts`: formula neutralization when a cell also needs quoting, and plain quoting.
+- `lib/env.ts`: defaults, trimming, a non-SQLite `DATABASE_URL` rejected at startup, and every
+  problem listed in one error.
 
 Integration (`tests/integration`):
 

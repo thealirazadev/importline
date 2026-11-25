@@ -16,7 +16,7 @@ the same `lib/` modules and Prisma client as the web app, so there is no second 
 The queue is the `jobs` table instead of a queue dependency. `claimNextJob` finds the oldest queued
 job whose `run_after` has passed and claims it with a compare-and-set
 `updateMany({ where: { id, state: "queued" } })`; a row count of 0 means another worker won, and it
-moves on to the next candidate. This gives exactly one winner on SQLite and PostgreSQL alike, so
+moves on to the next candidate. This gives exactly one winner without engine-specific SQL, so
 running several workers is safe. A running job heartbeats every 10 seconds, and a janitor in the
 poll loop returns any job whose heartbeat is older than 60 seconds to the queue with `attempts + 1`.
 The same janitor deletes `.part` files that aborted uploads left in the temp directory once they
@@ -147,12 +147,15 @@ matters: an earlier version quoted first and skipped the prefix for any value th
 so `=HYPERLINK(...)` containing a comma reached the spreadsheet intact. The report streams from the
 database in cursor-paged pages of 1000 rows.
 
-## 12. One schema shape for SQLite and PostgreSQL
+## 12. SQLite only, with a portable schema shape
 
-JSON payloads (`header_json`, `mapping_json`, `fields_json`) are stored as TEXT because Prisma's
-SQLite connector has no Json type, and length caps live in the normalization rules instead of
-engine-specific column types. SQLite is the default because it keeps a deployment to one process
-pair and one file; `lib/db.ts` turns on WAL and a 5-second busy timeout once per process so the web
+`prisma/schema.prisma` pins the `sqlite` provider, so SQLite is the only supported database and
+`lib/env.ts` rejects any `DATABASE_URL` that is not a `file:` URL at startup instead of letting
+Prisma fail later. JSON payloads (`header_json`, `mapping_json`, `fields_json`) are stored as TEXT
+because Prisma's SQLite connector has no Json type, and length caps live in the normalization rules
+instead of engine-specific column types, so a PostgreSQL provider could be added later without
+reshaping tables; that would need its own migrations and CI coverage and has not been done. SQLite
+keeps a deployment to one process pair and one file; `lib/db.ts` turns on WAL and a 5-second busy timeout once per process so the web
 and worker processes can write to the same file. Those two pragmas are guarded by a `file:` URL
 check and are the only engine-specific SQL in the codebase.
 
