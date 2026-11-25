@@ -28,7 +28,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Dispatch a claimed job to its body. Apply lands in phase 3. */
+/** Dispatch a claimed job to its body. Apply jobs have no handler yet, so they fail loudly. */
 async function runJobBody(job: Job): Promise<void> {
   if (job.type === "validate") {
     await runValidationJob(job.importId);

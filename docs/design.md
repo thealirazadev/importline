@@ -3,7 +3,7 @@
 A dense, boring operations UI. Server components render everything static; the only client
 components are the upload form, the mapping table, the progress poller, and confirm dialogs.
 Scannability beats flair: the operator's core activities are reading a validation report and
-watching a progress bar. Light theme only in v1.
+watching a progress bar. Light theme only.
 
 ## Color & theme
 

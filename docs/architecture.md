@@ -1,5 +1,10 @@
 # Architecture - importline
 
+This document describes the full engine. Upload, detection, mapping, validation, the dry run, the
+report and the job queue are implemented; the apply path (batches, ledger, catalog lock, resume,
+audit) and the janitor's crash-loop cap are designed here but not implemented yet. See
+docs/decisions.md for the reasoning behind what is built.
+
 ## App flow
 
 ```
@@ -53,7 +58,7 @@ AND state = ?`, checked row count); a lost race returns 409. The only allowed tr
 A minimal database-backed queue: the `jobs` table plus a long-running worker process
 (`worker/index.ts`, run with `tsx`). The sibling pulse-analytics triggers its job via a cron-hit
 route; importline does not, because an apply over 500k rows runs for minutes, must heartbeat,
-and must survive web-process deploys (see docs/memory.md decisions).
+and must survive web-process deploys (see docs/decisions.md).
 
 - **Enqueue**: only the state-machine transition helpers insert `jobs` rows (`validate`|`apply`,
   `queued`, `run_after` now), so an import can never have two live jobs.
@@ -235,9 +240,9 @@ importline/
   components/                             upload form, mapping table, progress bar, badges,
                                           report table, audit table, ui/*
   prisma/schema.prisma  prisma/migrations/  committed migrations, never edited after apply
-  tests/unit/  integration/  e2e/         see docs/testing.md
+  tests/unit/  integration/              see docs/testing.md
   docs/  .env.example  package.json  tsconfig.json  next.config.ts  tailwind.config.ts
-  vitest.config.ts  playwright.config.ts  eslint.config.mjs  .prettierrc
+  vitest.config.ts  eslint.config.mjs  .prettierrc
 ```
 
 ## Tech stack with rationale
@@ -252,7 +257,7 @@ Major versions; exact versions are pinned at install time and `package-lock.json
   SQLite keeps the default deployment to one process pair and one file (WAL + busy_timeout
   handle the web/worker writer overlap at this scale); Postgres is the option for heavier
   concurrency. Chosen over Drizzle (used in pulse-analytics) because this project has no
-  hand-written aggregation SQL - its queries are CRUD plus transactions (see docs/memory.md).
+  hand-written aggregation SQL - its queries are CRUD plus transactions.
 - **papaparse 5** - battle-tested streaming CSV parsing: quoted fields, embedded newlines,
   chunked input with pause/resume, exactly what the memory budget requires. Encoding is handled
   before papaparse by Node's `TextDecoder` (WHATWG labels cover all four detected encodings; no
@@ -260,8 +265,8 @@ Major versions; exact versions are pinned at install time and `package-lock.json
 - **tsx worker** - `npx tsx worker/index.ts` runs the TypeScript worker with the same `lib/`
   code and Prisma client as the web app; no second build pipeline.
 - **Tailwind CSS 3.4** - portfolio convention; tokens from docs/design.md.
-- **Vitest + Playwright, ESLint + Prettier** - as in the sibling projects; integration tests run
-  against a real temp SQLite file, plus Postgres in CI; one Playwright smoke.
+- **Vitest, ESLint + Prettier** - as in the sibling projects; integration tests run against a
+  real temp SQLite file. See docs/testing.md for what CI runs.
 - **No other runtime dependencies.** Hashing is `node:crypto`; validation is hand-rolled and
   table-tested (no zod); no UI component library.
 
@@ -357,4 +362,4 @@ External runtime services: none by default (SQLite); optionally a PostgreSQL 14+
 
 All env access goes through `lib/env.ts`, which validates at startup and fails fast. Worker
 timing constants (poll interval, heartbeat 10 s, stale job 60 s, stale lock 120 s, reclaim cap
-5, row cap 500,000) live in code, not config, per the YAGNI rule in docs/rules.md.
+5, row cap 500,000) live in code, not config, to keep configuration to the five values above.
